@@ -764,8 +764,6 @@ accuracy = ['balanced'] # balanced or normal CHANGE NAME TO SAVE THE FINAL RESUL
 settings = [{'n_layers': n, 'dropout_rate': d, 'batch_size': b, 'model_type': m, 'oversampling': o, 'num_classes': nc, 'accuracy': acc} for n, d, b, m, o, nc, acc in itertools.product(n_layers, dropout_rates, batch_size, model_type, oversampling, num_classes, accuracy)]
 
 run_with_cross_validation = True
-run_without_cross_validation = False
-run_feature_importance = False
 
 if run_with_cross_validation:
     #region Test models using Cross Validation
