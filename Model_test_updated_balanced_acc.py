@@ -720,7 +720,7 @@ def visualize_confusion_matrix_highest_MCC_score(all_model_results, labels, mode
 
 #region Input and preparing data
 #Inputing data
-input_data_path = 'C:/Users/filip/Desktop/Analysis_Fungi_Conservation/dowload_variables/NN_model/data/all_data.csv'
+input_data_path = '/data/subset_all_data.csv'
 input_data = pd.read_csv(input_data_path)
 
 #Excluding ground cover data. This is because it is a categorical variable. Here I have the mean for each raster per occurrence per species. This is not right.
