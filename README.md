@@ -2,7 +2,9 @@
 
 First, you can find data for fungal species in Sweden in the file data/alldata.csv. Each row represents one species, with associated environmental (e.g., temperature) and human-related features (e.g., human population density index). These data were retrieved using a custom Python library (Baggström et al., in prep.). The AOO and EOO were also calculated, and the extinction risk category for each species (when available) was extracted from the Swedish Red List. A smaller subset of the data is also available, in case you only want to test scripts with a shorter run.
 
-Second, using the Model_test_updated_balanced_acc script you can train a Neural Network model with different architectures and obtain outputs in a folder called results. There you will find:
+Using the R script in 01_correlation_plot you can check the correlation between the features included in the alldata.csv file. 
+
+Using the Model_test_updated_balanced_acc script you can train a Neural Network model with different architectures and obtain outputs in a folder called results. There you will find:
   Saved models (save_model and models_and_test_data folders)
   Tables with summary statistics for the validation metric and the test dataset (tables folder)
   Plots showing the number of epochs used to train each model (train_plots folder)
