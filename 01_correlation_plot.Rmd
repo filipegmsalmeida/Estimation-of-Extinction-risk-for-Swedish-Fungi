@@ -1,0 +1,300 @@
+---
+title: "01_explore_features"
+output: html_document
+date: "2024-01-24"
+---
+
+Adding more features increases the accuracy of the models. 
+One could argue that adding more features into the model makes it by default better in terms of accuracy because of the greater number of predictors. 
+However, this does not need to be the case if the extra features are redundant or not informative. 
+This is not the case here, as we have seen that the features are not correlated with each other.
+
+#Loading data
+
+```{r import data}
+library(corrplot)
+library(ggplot2)
+library(tidyverse)
+library(vegan)
+library(gridExtra)
+library(umap)
+library(rgl)
+
+working_dir<-setwd("C:/Users/filip/Desktop/Analysis_Fungi_Conservation/dowload_variables/NN_model/models/results/Variables Correlation")
+#Import data
+#Import features and labels
+features.tmp<-read.csv("all_data.csv")
+
+features.tmp <- features.tmp[, !names(features.tmp) %in% c("groundcover_min", "groundcover_max")]
+
+#Check if some features are all zeroes
+nonzero_features<-colSums(features.tmp==0)!=nrow(features.tmp)
+features.tmp<-features.tmp[,nonzero_features]
+
+#Removing species without Conservation Status or DD
+features.tmp <- features.tmp %>% filter(RedListCategory != "")
+features.tmp <- features.tmp %>% filter(RedListCategory != "DD")
+
+#Import labels
+#labels.tmp2<-read.csv("Pseudographis_pinicola_selected_columns_thinned.csv")#I keep this one in case we want to plot the results based on the coordinates
+#labels.tmp<-labels.tmp2[,c("gbifID", "labels")]
+#merge both datasets
+
+#dataset.tmp<-merge(features.tmp, labels.tmp, by.x="Sample_ID", by.y="gbifID", all=FALSE)
+dataset.tmp <- features.tmp
+rownames(dataset.tmp)<-dataset.tmp$species
+
+#Separate features and labels
+features<-dataset.tmp[,-c(1,ncol(dataset.tmp))]#delete the sample Id and labels
+labels<-dataset.tmp[,ncol(dataset.tmp), drop=FALSE]#keep only the labels
+
+#create final features dataset
+mydata=features
+
+#change long name 
+mydata <- mydata %>% rename(NDVI_min = s2_NDVI_mean_min)
+mydata <- mydata %>% rename(NDVI_max = s2_NDVI_mean_max)
+
+mydata <- mydata %>% rename(HII_min = hii_hii_mean_min)
+mydata <- mydata %>% rename(HII_max = hii_hii_mean_max)
+
+mydata <- mydata %>% rename(HII_pop_min = hii_population_density_mean_min)
+mydata <- mydata %>% rename(HII_pop_max = hii_population_density_mean_max)
+
+mydata <- mydata %>% rename(HII_power_min = hii_power_mean_min)
+mydata <- mydata %>% rename(HII_power_max = hii_power_mean_max)
+
+mydata <- mydata %>% rename(HII_roads_min = hii_roads_mean_min)
+mydata <- mydata %>% rename(HII_roads_max = hii_roads_mean_max)
+
+mydata <- mydata %>% rename(Dem_min = dem_b1_mean_min)
+mydata <- mydata %>% rename(Dem_max = dem_b1_mean_max)
+
+mydata <- mydata %>% rename(Bio01_min = bioclim_bio01_mean_min)
+mydata <- mydata %>% rename(Bio01_max = bioclim_bio01_mean_max)
+
+mydata <- mydata %>% rename(Bio12_min = bioclim_bio12_mean_min)
+mydata <- mydata %>% rename(Bio12_max = bioclim_bio12_mean_max)
+
+mydata <- mydata %>% rename(NDVI_std_min = s2_NDVI_std_min)
+mydata <- mydata %>% rename(NDVI_std_max = s2_NDVI_std_max)
+
+mydata <- mydata %>% rename(HII_std_min = hii_hii_std_min)
+mydata <- mydata %>% rename(HII_std_max = hii_hii_std_max)
+
+mydata <- mydata %>% rename(Dem_std_min = dem_b1_std_min)
+mydata <- mydata %>% rename(Dem_std_max = dem_b1_std_max)
+
+#reorganize columns
+swedish_var=c('biomass_min', 'biomass_max', 'treeheight_min', 'treeheight_max', 'soilmoisture_min', 'soilmoisture_max', 'peatmap_min', 'peatmap_max')
+global_var=c('NDVI_min', 'NDVI_max', 'NDVI_std_min', 'NDVI_std_max', 'HII_min', 'HII_max', 'HII_std_min','HII_std_min', 'HII_pop_min', 'HII_pop_max', 'HII_power_min', 'HII_power_max', 'HII_roads_min', 'HII_roads_max','Dem_min', 'Dem_max', 'Dem_std_min', 'Dem_std_max', 'Bio01_min', 'Bio01_max','Bio12_min', 'Bio12_max' )
+IUCN_var=c('n_occ', 'AOO2km','EOOkm2')
+
+#standard_features=c("era5_bioclim", "temp_max", "temp_sum", "hii", "dem")
+
+mydata%>%select(contains(swedish_var))->mydata_swedish_var
+mydata%>%select(contains(global_var))->mydata_global_var
+mydata%>%select(contains(IUCN_var))->mydata_IUCN_var
+#mydata%>%select(contains(standard_features))->mydata_standard
+
+cbind(mydata_swedish_var, mydata_global_var, mydata_IUCN_var)->mydata
+
+```
+
+# Correlation plot
+
+```{r}
+
+cor_mat<-cor(mydata, method="spearman")
+colors_labels=c(rep("red",ncol(mydata_swedish_var)), rep("blue",ncol(mydata_global_var)), rep("darkgreen",ncol(mydata_IUCN_var)))
+
+png("correlation_plot.png", width=1000, height=1000, res = 150)
+corrplot(cor_mat, 
+         tl.cex=0.8, tl.col=colors_labels)
+dev.off()
+```
+
+#PCA of all features
+
+```{r}
+
+object_pca<-rda(mydata, scale=TRUE)
+total_data<-cbind(mydata, scores(object_pca, choices=c(1,2,3))$sites, labels)
+#changing labels to only 2 classes, and in format of 0 and 1 
+total_data <- total_data %>%
+  mutate(labels = case_when(
+    RedListCategory %in% c("LC", "NT") ~ 0,
+    RedListCategory %in% c("VU", "EN", "CR") ~ 1,
+  ))
+
+total_data$labels<-as.factor(total_data$labels)
+total_data$labels_cat<-ifelse(total_data$labels==1, "EN", "NEN")
+vectors<-as.data.frame(scores(object_pca, choices = c(1,2,3))$species*0.5)#Scores here are scaled by eigenvalues, I will scale them down by half for visualization purposes
+vectors$feature_type<-c(rep("swedish_var",ncol(mydata_swedish_var)), rep("global_var",ncol(mydata_global_var)), rep("IUCNN_var",ncol(mydata_IUCN_var)))
+#Calculate the variation explained by each PC axis
+Axis1_var<-paste("PC1"," (",round(object_pca$CA$eig["PC1"]/object_pca$CA$tot.chi*100,1), "%",")", sep="")
+Axis2_var<-paste("PC2"," (",round(object_pca$CA$eig["PC2"]/object_pca$CA$tot.chi*100,1), "%",")",sep="")
+Axis3_var<-paste("PC3"," (",round(object_pca$CA$eig["PC3"]/object_pca$CA$tot.chi*100,1), "%",")",sep="")
+#Make PCA plot
+ggplot(data = total_data, aes(x=PC1, y=PC2))+
+  geom_point(aes(fill=labels_cat),size = 0.8,  alpha=0.5, shape=21)+
+  geom_hline(yintercept=0, linetype="dotted", color = "black") +
+  geom_vline(xintercept=0, linetype="dotted", color = "black") +
+  xlab(Axis1_var) +
+  ylab(Axis2_var)+
+  geom_segment(aes(x=0, y=0, xend=PC1, yend=PC2, color=feature_type),arrow = arrow(length=unit(0.20,"cm"), ends="last", type = "closed"), linewidth=0.5,data = vectors)+geom_text(aes(x=PC1*0.9, y=PC2*1.1),label=rownames(vectors), size=5,data=vectors,check_overlap = TRUE)+theme_bw()+theme(axis.title.y = element_text(size=15),axis.title.x =element_text(margin=margin(t=15, r=0, b=0, l=0),size=15),panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.text.x =element_text(color="black", size=15), axis.text.y =element_text(color="black", size=15), panel.border=element_rect(colour="black", size=1))
+
+ggsave("PCA_plot.png", width=25, height=20, units = "cm")
+
+
+```
+
+
+##Variable loadings across axis
+
+```{r}
+
+unweighted_scores<-as.data.frame(object_pca$CA$v)
+unweighted_scores$feature_type<-c(rep("laser",ncol(mydata_swedish_var)), rep("soil",ncol(mydata_global_var)), rep("satellite",ncol(mydata_IUCN_var)))
+unweighted_scores$feature<-rownames(unweighted_scores)
+unweighted_scores<-unweighted_scores[,c(1:10,ncol(unweighted_scores),ncol(unweighted_scores)-1)]
+unweighted_scores$feature <- factor(unweighted_scores$feature, levels = unique(unweighted_scores$feature))
+scores_axis<-function(data, axis){
+    ggplot(data=data, aes(x=feature, y=.data[[axis]], fill=feature_type))+
+    geom_bar(stat="identity")+
+    theme_bw()+
+    theme(axis.title.y = element_text(size=10),axis.title.x =element_text(margin=margin(t=15, r=0, b=0, l=0),size=10),panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.text.x =element_text(color="black", size=1), axis.text.y =element_text(color="black", size=10), panel.border=element_rect(colour="black", size=1),legend.text=element_text(size=8), legend.key.size = unit(0.5, "cm"), legend.title=element_text(size=8))+
+    xlab("Feature type")+
+    ylab(paste("loadings on", axis, sep=" "))
+    
+}
+
+
+plot1<-scores_axis(unweighted_scores, axis="PC1")
+plot2<-scores_axis(unweighted_scores, axis="PC2")
+plot3<-scores_axis(unweighted_scores, axis="PC3")
+plot4<-scores_axis(unweighted_scores, axis="PC4")
+plot5<-scores_axis(unweighted_scores, axis="PC5")
+plot6<-scores_axis(unweighted_scores, axis="PC6")
+loadings_plot<-arrangeGrob(plot1,plot2,plot3,plot4,plot5,plot6, ncol=2, nrow=3)
+
+ggsave("loadings.png",loadings_plot, width=25, height=25, units="cm")
+
+
+```
+
+#3D PCA of all features
+```{r}
+#3D PCA Plot
+vectors_colors<-c(rep("red",ncol(mydata_swedish_var)*2), rep("lightblue",ncol(mydata_global_var)*2), rep("darkgreen",ncol(mydata_IUCN_var)*2))
+total_data$labels_cat<-ifelse(total_data$labels==1, "darkblue", "darkred")
+plot3d(total_data$PC1, total_data$PC2, total_data$PC3, col= total_data$labels_cat, alpha=0.5, pch=18, xlab=Axis1_var, ylab=Axis2_var, zlab=Axis3_var, cex.axis=1.5, cex.lab=1.5, cex.main=1.5, cex.sub=1.5, sub="")
+points3d(total_data$PC1, total_data$PC2, total_data$PC3, col=total_data$labels_cat, pch=16 )
+coords <- NULL
+for (i in 1:nrow(vectors)) {
+  coords <- rbind(coords,
+                  rbind(c(0,0,0),
+                                vectors[i,1:3]))
+}
+segments3d(coords,
+        col=vectors_colors,
+        lwd=1)
+
+rglwidget()
+
+```
+
+
+# PCA only standard features
+
+```{r}
+standard_pca<-rda(mydata_standard, scale=TRUE)
+total_data<-cbind(mydata_standard, scores(standard_pca, choices=c(1,2,3))$sites, labels)
+total_data$labels<-as.factor(total_data$labels)
+total_data$labels_cat<-ifelse(total_data$labels==1, "presence", "absence")
+vectors<-as.data.frame(scores(standard_pca, choices = c(1,2,3))$species*0.2)#Scores here are scaled by eigenvalues, I will scale them down by half for visualization purposes
+#Calculate the variation explained by each PC axis
+Axis1_var<-paste("PC1"," (",round(standard_pca$CA$eig["PC1"]/standard_pca$CA$tot.chi*100,1), "%",")", sep="")
+Axis2_var<-paste("PC2"," (",round(standard_pca$CA$eig["PC2"]/standard_pca$CA$tot.chi*100,1), "%",")",sep="")
+Axis3_var<-paste("PC3"," (",round(standard_pca$CA$eig["PC3"]/standard_pca$CA$tot.chi*100,1), "%",")",sep="")
+#Make PCA plot
+ggplot(data = total_data, aes(x=PC1, y=PC2))+
+  geom_point(aes(fill=labels_cat),size = 1,  alpha=0.5, shape=21)+
+  geom_hline(yintercept=0, linetype="dotted", color = "black") +
+  geom_vline(xintercept=0, linetype="dotted", color = "black") +
+  xlab(Axis1_var) +
+  ylab(Axis2_var)+
+  geom_segment(aes(x=0, y=0, xend=PC1, yend=PC2),arrow = arrow(length=unit(0.20,"cm"), ends="last", type = "closed"), size=0.5,data = vectors)+geom_text(aes(x=PC1*0.9, y=PC2*1.1),label=rownames(vectors), size=5,data=vectors,check_overlap = TRUE)+theme_bw()+theme(axis.title.y = element_text(size=15),axis.title.x =element_text(margin=margin(t=15, r=0, b=0, l=0),size=15),panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.text.x =element_text(color="black", size=15), axis.text.y =element_text(color="black", size=15), panel.border=element_rect(colour="black", size=1))
+
+ggsave("PCA_standard_plot.pdf", width=25, height=20, units = "cm")
+
+
+
+
+```
+
+#3D PCA of standard features
+
+```{r}
+
+total_data$labels_cat<-ifelse(total_data$labels==1, "darkblue", "darkred")
+plot3d(total_data$PC1, total_data$PC2, total_data$PC3, col= total_data$labels_cat, alpha=0.5, pch=18, xlab=Axis1_var, ylab=Axis2_var, zlab=Axis3_var, cex.axis=1.5, cex.lab=1.5, cex.main=1.5, cex.sub=1.5, sub="")
+
+coords <- NULL
+for (i in 1:nrow(vectors)) {
+  coords <- rbind(coords,
+                  rbind(c(0,0,0),
+                                vectors[i,1:3]))
+}
+segments3d(coords,
+              lwd=1)
+
+
+
+
+```
+
+
+# UMAP of all features
+
+```{r}
+umap_full<-umap(mydata, n_neighbors=150)
+
+scores_umap<-umap_full$layout
+colnames(scores_umap)<-c("Umap1", "Umap2")
+umap_data<-cbind(mydata, scores_umap, labels)
+umap_data$labels<-as.factor(umap_data$labels)
+ggplot(data = umap_data, aes(x=Umap1, y=Umap2))+
+  geom_point(aes(fill=labels),size = 1,  alpha=0.5, shape=21)+
+  geom_hline(yintercept=0, linetype="dotted", color = "black") +
+  geom_vline(xintercept=0, linetype="dotted", color = "black") +
+  theme_bw()+theme(axis.title.y = element_text(size=15),axis.title.x =element_text(margin=margin(t=15, r=0, b=0, l=0),size=15),panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.text.x =element_text(color="black", size=15), axis.text.y =element_text(color="black", size=15), panel.border=element_rect(colour="black", size=1))
+
+ggsave("UMAP.pdf", width=25, height=20, units = "cm")
+
+
+```
+
+# UMAP only standard features
+
+```{r}
+
+
+umap_standard<-umap(mydata_standard, n_neighbors=150)
+
+scores_umap_standard<-umap_standard$layout
+colnames(scores_umap_standard)<-c("Umap1", "Umap2")
+umap_data_standard<-cbind(mydata_standard, scores_umap_standard, labels)
+umap_data_standard$labels<-as.factor(umap_data_standard$labels)
+ggplot(data = umap_data_standard, aes(x=Umap1, y=Umap2))+
+  geom_point(aes(fill=labels),size = 1,  alpha=0.5, shape=21)+
+  geom_hline(yintercept=0, linetype="dotted", color = "black") +
+  geom_vline(xintercept=0, linetype="dotted", color = "black") +
+  theme_bw()+theme(axis.title.y = element_text(size=15),axis.title.x =element_text(margin=margin(t=15, r=0, b=0, l=0),size=15),panel.grid.major=element_blank(), panel.grid.minor=element_blank(), axis.text.x =element_text(color="black", size=15), axis.text.y =element_text(color="black", size=15), panel.border=element_rect(colour="black", size=1))
+
+ggsave("UMAP_standard.pdf", width=25, height=20, units = "cm")
+
+
+
+```
+
